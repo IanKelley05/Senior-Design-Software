@@ -1,0 +1,9 @@
+---
+description: Commit and push substantial completed RHIT changes after verification
+alwaysApply: true
+---
+
+Follow the repository workflow in `AGENTS.md`. The user has authorized committing
+and pushing substantial completed changes to `origin` after verification, with
+credentials and generated local data excluded. Verify the remote commit and
+report the result. Never force-push.
