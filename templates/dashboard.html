@@ -1,10 +1,12 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RHIT | Training dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script id="vest-config" type="application/json">{{ grid|tojson }}</script>
+  <script defer src="{{ url_for('static', filename='vest.js') }}"></script>
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
@@ -31,38 +33,17 @@
   <div class="layout">
     <section class="panel heatmap-panel" aria-labelledby="heatmap-title">
       <div class="section-title"><div><p class="eyebrow">IMPACT DISTRIBUTION</p><h2 id="heatmap-title">Vest heatmap</h2></div><span class="subtle">FRONT · TEMPORARY LAYOUT</span></div>
-      <div class="vest-layout">
-        <svg id="vest" viewBox="0 0 360 420" role="img" aria-labelledby="vest-title vest-description">
-          <title id="vest-title">Hits by vest region</title><desc id="vest-description">Each numbered region shows its saved hit count. Region names and counts are also listed beside the vest.</desc>
-          <defs><path id="vest-outline" d="M75 20 H130 Q180 100 230 20 H285 L300 120 L335 165 L310 400 H50 L25 165 L60 120 Z"/><clipPath id="vest-clip"><use href="#vest-outline"/></clipPath></defs>
-          <g clip-path="url(#vest-clip)">
-          {% for region in regions %}
-            <g class="vest-region" data-region="{{ region.id }}">
-              <rect x="{{ region.x }}" y="{{ region.y }}" width="{{ region.width }}" height="{{ region.height }}" fill="#293441"/>
-              <title>{{ region.label }}: 0 hits</title>
-            </g>
-          {% endfor %}
-          </g>
-          <use href="#vest-outline" fill="none" stroke="#8391a2" stroke-width="2"/>
-          {% for region in regions %}
-          <g class="vest-label" pointer-events="none"><text x="{{ region.cx }}" y="{{ region.cy - 8 }}" class="region-number">R{{ region.number }}</text><text x="{{ region.cx }}" y="{{ region.cy + 15 }}" class="region-value" data-count-region="{{ region.id }}">0</text></g>
-          {% endfor %}
-        </svg>
-        <ul class="region-list" id="region-list">{% for region in regions %}
-          <li data-region-row="{{ region.id }}"><span class="region-key">R{{ region.number }}</span><span>{{ region.label }}</span><strong data-list-count="{{ region.id }}">0</strong></li>
-        {% endfor %}</ul>
-      </div>
-      <div class="legend" aria-label="Heatmap legend">
-        <span><i class="zero-swatch"></i> 0 hits</span><div><div class="legend-gradient"></div><div class="legend-labels"><span>1 hit</span><span id="legend-max">1 hit</span></div></div>
-      </div>
-      <p class="caption">Color = hit count, not force. Scale follows this session's busiest region. A white outline briefly marks a newly received hit.</p>
-      <p class="caption">Region positions must be confirmed with the hardware team.</p>
+      <div class="continuous-vest"><canvas id="vest" role="img" aria-label="Vest wire contact heatmap"></canvas></div>
+      <div class="legend" aria-label="Contact coverage legend"><span><i class="zero-swatch"></i> No coverage</span><div><div class="legend-gradient"></div><div class="legend-labels"><span>Lower coverage</span><span>Higher coverage</span></div></div></div>
+      <p id="grid-summary" class="caption">No spatial hits recorded.</p>
+      <p class="caption">{{ grid.columns }} columns &times; {{ grid.rows }} rows &middot; Faint copper lines show the wires. Color shows smoothed contact coverage, not force. One footprint counts as one hit.</p>
+      <p class="caption">Row/column combinations estimate an area; the exact contact intersections are not yet known.</p>
       <p id="unmapped-regions" class="warning" hidden></p>
     </section>
     <section class="panel history" aria-labelledby="history-title">
       <div class="section-title"><div><p class="eyebrow">SELECTED SESSION</p><h2 id="history-title">Recent hits</h2></div><span id="history-count" class="subtle">0 records</span></div>
       <p class="caption">Newest first · timestamps in your local timezone</p>
-      <div class="table-scroll"><table><thead><tr><th>Timestamp</th><th>Region</th><th>Simulated estimated<br>force (N)</th></tr></thead><tbody id="hit-rows"></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>Timestamp</th><th>Contact wires</th><th>Simulated estimated<br>force (N)</th></tr></thead><tbody id="hit-rows"></tbody></table></div>
       <p id="empty-hits" class="empty">No hits recorded.</p>
     </section>
   </div>
@@ -77,14 +58,7 @@
       <div><dt>Database failures</dt><dd id="udp-database_failures">0</dd></div>
     </dl><p class="caption" id="udp-note">UDP counters cover this receiver process only, not browser-generated hits or undelivered network packets.</p>
   </section>
-  <details class="panel simulator"><summary>Simulator controls <span>Send supplied force values to the active session</span></summary>
-    <p id="simulator-target">No active session.</p><form id="hit-form">
-      <div><label for="hit-region">Temporary region</label><select id="hit-region">{% for region in regions %}<option value="{{ region.id }}">{{ region.label }}</option>{% endfor %}</select></div>
-      <div><label for="hit-force">Simulated estimated force (N)</label><input id="hit-force" type="number" min="0" step="any" value="100" required></div>
-      <button id="send-hit" disabled>Send simulated hit</button><button id="replay-hit" class="secondary" type="button" disabled>Repeat last delivery</button>
-    </form><p id="last-event" class="caption">Each new simulated hit gets a stable event ID. Repeat delivery reuses the exact record.</p>
-    <p class="caption">No acceleration-to-force calculation. The CLI simulator sends provisional complete-hit packets over UDP; real glove and vest messages may be separate.</p>
-  </details>
+  <section class="panel simulator"><h2>Interactive glove simulator</h2><p class="caption">In a second terminal, run <code>python simulator_web.py</code> and open <a href="{{ simulator_url }}" target="_blank" rel="noopener">the simulator website</a>. Choose force on the left, footprint size on the right, then click the vest. Start a recording session here first.</p></section>
   <footer><span>RHIT · Ian Kelley, Aiden Reittinger, Seth Mowery &amp; Joseph Schelb</span><span id="poll-status">Connecting…</span></footer>
 </main>
 </body>

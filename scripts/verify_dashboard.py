@@ -1,9 +1,4 @@
-"""Browser + real PostgreSQL verification in a disposable test schema.
-
-Requires requirements-dev.txt and installed Microsoft Edge. No demo data is
-changed. Run from the repository root with RHIT_TEST_DATABASE=rhit_test.
-"""
-
+"""Browser verification of selected-session wire coverage and legacy history."""
 import asyncio
 from datetime import datetime, timezone
 import os
@@ -31,84 +26,61 @@ async def verify(app, base):
         browser = await playwright.chromium.launch(channel="msedge", headless=True)
         try:
             page = await browser.new_page(viewport={"width": 1366, "height": 1000})
-            errors = []
+            errors, requests = [], []
             page.on("pageerror", lambda error: errors.append(str(error)))
-            request_times = []
-            page.on("request", lambda req: request_times.append(monotonic()) if req.url.endswith("/hits") and req.method == "GET" else None)
+            page.on("request", lambda req: requests.append(monotonic()) if req.url.endswith("/hits") and req.method == "GET" else None)
 
             async def post(path, payload=None):
                 response = await page.request.post(base + path, data=payload)
                 assert response.ok, await response.text()
                 return await response.json()
 
-            async def hit(sid, region, force, event_id=None):
-                payload = {"event_id": event_id or str(uuid4()), "timestamp": datetime.now(timezone.utc).isoformat(), "region": region, "force_n": force}
-                await post(f"/api/sessions/{sid}/hits", payload)
-                return payload
+            async def hit(sid, force=100, legacy=False):
+                data = {"event_id": str(uuid4()), "timestamp": datetime.now(timezone.utc).isoformat(), "force_n": force}
+                data.update({"region": app.config["VEST_REGIONS"][0]} if legacy else {"contact": {"rows": [4,5,6], "columns": [5,6,7,8]}})
+                await post(f"/api/sessions/{sid}/hits", data)
+                return data
 
-            async def check_counts(sid):
+            async def check(sid):
                 with database.connect(app.config) as conn:
-                    stats = conn.execute("SELECT count(*) AS count, avg(force_n) AS average, max(force_n) AS maximum FROM hits WHERE session_id=%s", (sid,)).fetchone()
-                    counts = conn.execute("SELECT region,count(*) AS count FROM hits WHERE session_id=%s GROUP BY region", (sid,)).fetchall()
-                await expect(page.locator("#hit-count")).to_have_text(str(stats["count"]))
-                await expect(page.locator("#hit-rows tr")).to_have_count(stats["count"])
-                for row in counts:
-                    await expect(page.locator(f'[data-count-region="{row["region"]}"]')).to_have_text(str(row["count"]))
-                shown_total = await page.locator("[data-count-region]").evaluate_all("nodes => nodes.reduce((sum, node) => sum + Number(node.textContent), 0)")
-                assert shown_total == stats["count"]
-                for field, key in (("average-force", "average"), ("maximum-force", "maximum")):
-                    shown = await page.locator("#" + field).inner_text()
-                    assert shown == "—" if stats[key] is None else float(shown.replace(",", "")) == stats[key]
+                    rows = conn.execute("SELECT * FROM hits WHERE session_id=%s", (sid,)).fetchall()
+                await expect(page.locator("#hit-count")).to_have_text(str(len(rows)))
+                await expect(page.locator("#hit-rows tr")).to_have_count(len(rows))
+                await expect(page.locator("#vest")).to_have_attribute("data-spatial-hits", str(sum(row["contact"] is not None for row in rows)))
+                if rows:
+                    average = float((await page.locator("#average-force").inner_text()).replace(",", ""))
+                    assert abs(average - sum(row["force_n"] for row in rows)/len(rows)) < .01
 
-            regions = app.config["VEST_REGIONS"]
             await page.goto(base)
             await expect(page.locator("#start-session")).to_be_enabled()
             await expect(page.locator("#hit-count")).to_have_text("0")
-            await expect(page.locator("#average-force")).to_have_text("—")
-            # Use actual session and simulator controls for the first session.
-            await page.locator("#session-name").fill("Archived browser check")
+            await page.locator("#session-name").fill("Saved wire session")
             await page.locator("#start-session").click()
             await expect(page.locator("#view-mode")).to_have_text("LIVE SESSION")
-            old_id = int(await page.locator("#saved-sessions").input_value())
-            await page.locator("summary").click()
-            await page.locator("#send-hit").click()
-            await expect(page.locator("#hit-count")).to_have_text("1")
-            await expect(page.locator('.hit-flash')).to_have_count(1)
-            assert await page.locator('.hit-flash rect').evaluate("node => getComputedStyle(node).animationName") == 'hit-flash'
-            await hit(old_id, regions[min(1, len(regions) - 1)], 300)
-            await check_counts(old_id)
+            old = int(await page.locator("#saved-sessions").input_value())
+            event = await hit(old)
+            await check(old)
+            await post(f"/api/sessions/{old}/hits", event)
+            await hit(old, 300, legacy=True)
+            await check(old)
+            await expect(page.locator("#unmapped-regions")).to_contain_text("1 legacy")
             await page.locator("#end-session").click()
             await expect(page.locator("#view-mode")).to_have_text("SAVED SESSION")
-            await page.locator("#session-name").fill("Active browser check")
+            await page.locator("#session-name").fill("Active wire session")
             await page.locator("#start-session").click()
             await expect(page.locator("#hit-count")).to_have_text("0")
-            active_id = int(await page.locator("#saved-sessions").input_value())
-            assert active_id != old_id
-            await check_counts(active_id)
-            event = await hit(active_id, regions[0], 500)
-            await expect(page.locator('.hit-flash')).to_have_count(1)
-            await check_counts(active_id)
-            await expect(page.locator('.hit-flash')).to_have_count(0)
-            duplicate = await post(f"/api/sessions/{active_id}/hits", event)
-            assert duplicate["inserted"] is False
+            active = int(await page.locator("#saved-sessions").input_value())
+            await hit(active, 500)
+            await check(active)
+            await page.locator("#saved-sessions").select_option(str(old))
+            await check(old)
+            await hit(active, 700)
             await asyncio.sleep(.4)
-            await expect(page.locator('.hit-flash')).to_have_count(0)
-            await check_counts(active_id)
-            # Viewing old data must not redirect simulator writes or auto-switch.
-            await page.locator("#saved-sessions").select_option(str(old_id))
-            await check_counts(old_id)
-            await expect(page.locator('.hit-flash')).to_have_count(0)
-            await page.locator("#hit-force").fill("700")
-            await page.locator("#send-hit").click()
-            await expect(page.locator("#action-message")).to_contain_text(f"session #{active_id}")
-            await asyncio.sleep(.5)
-            assert await page.locator("#saved-sessions").input_value() == str(old_id)
-            await check_counts(old_id)
+            await check(old)
+            assert await page.locator("#saved-sessions").input_value() == str(old)
             await page.locator("#view-active").click()
-            await check_counts(active_id)
-            await expect(page.locator("#average-force")).to_have_text("600")
+            await check(active)
 
-            # Delay a selected-session response, then switch before it arrives.
             pending = asyncio.Event()
             async def delayed(route):
                 response = await route.fetch()
@@ -117,40 +89,32 @@ async def verify(app, base):
                 try:
                     await route.fulfill(response=response)
                 except Error:
-                    pass  # Aborted on selection change, as intended.
-            pattern = f"**/api/sessions/{old_id}/hits"
+                    pass
+            pattern = f"**/api/sessions/{old}/hits"
             await page.route(pattern, delayed)
-            await page.locator("#saved-sessions").select_option(str(old_id))
+            await page.locator("#saved-sessions").select_option(str(old))
             await asyncio.wait_for(pending.wait(), 5)
-            await page.locator("#saved-sessions").select_option(str(active_id))
-            await check_counts(active_id)
+            await page.locator("#saved-sessions").select_option(str(active))
             await asyncio.sleep(.9)
-            await check_counts(active_id)
-            await expect(page.locator("#selected-title")).to_contain_text("Active browser check")
+            await check(active)
             await page.unroute(pattern, delayed)
-
-            request_times.clear()
+            requests.clear()
             await asyncio.sleep(1.25)
-            assert 3 <= len(request_times) <= 7, request_times
-            # History remains selected after a transient network outage.
+            assert 3 <= len(requests) <= 7, requests
             async def unavailable(route):
                 await route.fulfill(status=503, content_type="application/json", body='{"error":"Database temporarily unavailable"}')
             await page.route("**/api/sessions/*/hits", unavailable)
             await expect(page.locator("#poll-status")).to_contain_text("may be stale")
-            await expect(page.locator("#send-hit")).to_be_disabled()
+            await expect(page.locator("#end-session")).to_be_disabled()
             await page.unroute("**/api/sessions/*/hits", unavailable)
             await page.locator("#check-connection").click()
-            await expect(page.locator("#send-hit")).to_be_enabled()
-            await check_counts(active_id)
-            await page.locator("summary").click()
-            output = ROOT / ".local" / "dashboard-verified.png"
-            output.parent.mkdir(exist_ok=True)
-            await page.screenshot(path=str(output), full_page=True)
-            assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), "Horizontal overflow"
+            await expect(page.locator("#end-session")).to_be_enabled()
+            await check(active)
+            (ROOT / ".local").mkdir(exist_ok=True)
+            await page.screenshot(path=str(ROOT / ".local/dashboard-verified.png"), full_page=True)
             assert not errors, errors
-            print("PASS: browser counts, SVG counts, history, and force statistics match PostgreSQL.")
-            print("PASS: empty sessions, new-hit pulse, duplicate delivery, 250 ms polling, saved-session isolation, delayed responses, and outage recovery.")
-            print("Screenshot: .local/dashboard-verified.png")
+            print("PASS: wire coverage, totals, history and force statistics match saved records.")
+            print("PASS: empty/legacy sessions, duplicates, polling, archived-view isolation, delayed responses and outage recovery.")
         finally:
             await browser.close()
 

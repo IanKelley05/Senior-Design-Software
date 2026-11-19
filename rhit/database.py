@@ -1,4 +1,4 @@
-﻿"""SQL operations and transactions. PostgreSQL owns all session state."""
+"""SQL operations and transactions. PostgreSQL owns all session state."""
 
 from pathlib import Path
 
@@ -7,6 +7,7 @@ from flask import current_app
 from flask.cli import with_appcontext
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 
 class SessionError(Exception):
@@ -36,9 +37,9 @@ def check_connection(config):
     try:
         with connect(config) as connection:
             connection.execute("SELECT id FROM training_sessions LIMIT 0")
-            connection.execute("SELECT event_id FROM hits LIMIT 0")
-    except psycopg.errors.UndefinedTable:
-        return {"available": False, "message": "PostgreSQL is connected but tables are missing. Run: python -m flask --app app init-db"}
+            connection.execute("SELECT event_id, contact FROM hits LIMIT 0")
+    except (psycopg.errors.UndefinedTable, psycopg.errors.UndefinedColumn):
+        return {"available": False, "message": "PostgreSQL needs schema setup/update. Run: python -m flask --app app init-db"}
     except psycopg.Error:
         return {"available": False, "message": "PostgreSQL is unavailable. Start the database and check PG settings in .env. No hits can be saved until it reconnects."}
     return {"available": True, "message": "PostgreSQL is ready. Sessions and accepted simulator hits are saved in the database."}
@@ -47,12 +48,17 @@ def check_connection(config):
 @click.command("init-db")
 @with_appcontext
 def init_db_command():
-    """Apply the repeatable initial schema without deleting existing records."""
-    sql = (Path(__file__).resolve().parent.parent / "migrations" / "001_sessions.sql").read_text(encoding="utf-8")
+    """Apply pending numbered SQL migrations without deleting existing records."""
+    migrations = Path(__file__).resolve().parent.parent / "migrations"
     try:
         with connect(current_app.config) as connection:
             connection.execute("SELECT pg_advisory_xact_lock(49595001)")
-            connection.execute(sql)
+            connection.execute("CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())")
+            applied = {row["name"] for row in connection.execute("SELECT name FROM schema_migrations").fetchall()}
+            for path in sorted(migrations.glob("*.sql")):
+                if path.name not in applied:
+                    connection.execute(path.read_text(encoding="utf-8"))
+                    connection.execute("INSERT INTO schema_migrations (name) VALUES (%s)", (path.name,))
     except psycopg.Error:
         raise click.ClickException("Schema setup failed. Check PostgreSQL, PG settings, and table-creation permissions.") from None
     click.echo("RHIT schema is ready. Existing sessions and hits were preserved.")
@@ -99,9 +105,9 @@ def save_hit(config, session_id, hit):
         if hit["timestamp"] < session["started_at"]:
             raise SessionError("Hit timestamp is before the session start", 400)
         saved = connection.execute(
-            "INSERT INTO hits (event_id, session_id, timestamp, region, force_n) "
-            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (event_id) DO NOTHING RETURNING *",
-            (hit["event_id"], session_id, hit["timestamp"], hit["region"], hit["force_n"]),
+            "INSERT INTO hits (event_id, session_id, timestamp, region, force_n, contact) "
+            "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (event_id) DO NOTHING RETURNING *",
+            (hit["event_id"], session_id, hit["timestamp"], hit["region"], hit["force_n"], Jsonb(hit["contact"]) if hit["contact"] is not None else None),
         ).fetchone()
         if saved is not None:
             return saved, True
@@ -131,5 +137,5 @@ def session_detail(config, session_id):
         if session is None:
             raise SessionError("Session not found", 404)
         hits = connection.execute("SELECT * FROM hits WHERE session_id=%s ORDER BY timestamp, event_id", (session_id,)).fetchall()
-        regions = connection.execute("SELECT region, count(*)::integer AS hit_count FROM hits WHERE session_id=%s GROUP BY region ORDER BY region", (session_id,)).fetchall()
+        regions = connection.execute("SELECT region, count(*)::integer AS hit_count FROM hits WHERE session_id=%s AND region IS NOT NULL GROUP BY region ORDER BY region", (session_id,)).fetchall()
         return {"session": session, "hits": hits, "regions": regions}

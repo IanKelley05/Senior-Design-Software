@@ -1,5 +1,10 @@
 # RHIT provisional complete-hit UDP protocol v1
 
+**Legacy region-only format.** The interactive wire-grid demo now uses
+[protocol v2](wire-grid-demo.md). Existing v1 senders and saved records remain
+supported, but region-only hits are listed in history without invented grid
+positions. The receiver lifecycle and counters described below still apply.
+
 **Temporary complete-hit demo format.** One datagram represents one complete
 hit, with an already supplied simulated estimated force. This is not the final
 hardware protocol. Real glove accelerometer messages and vest contact messages

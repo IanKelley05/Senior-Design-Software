@@ -59,11 +59,13 @@ class DashboardTests(unittest.TestCase):
         for name in (None, "", " " * 5, "x" * 101):
             self.assertEqual(self.client.post("/api/sessions", json={"name": name}).status_code, 400)
 
-    def test_svg_uses_custom_configuration(self):
+    def test_wire_grid_replaces_legacy_regions(self):
         app = create_app({"TESTING": True, "PGDATABASE": "", "PGUSER": "", "VEST_REGIONS": "chest,abdomen"})
         html = app.test_client().get("/").get_data(as_text=True)
-        self.assertIn('data-region="chest"', html)
-        self.assertIn('data-region="abdomen"', html)
+        self.assertIn('id="vest-config"', html)
+        self.assertIn('"columns": 12', html)
+        self.assertIn('"rows": 10', html)
+        self.assertIn('<canvas id="vest"', html)
         self.assertNotIn('data-region="upper-left"', html)
         self.assertIn('Simulated estimated', html)
 

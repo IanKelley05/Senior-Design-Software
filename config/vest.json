@@ -1,0 +1,13 @@
+{
+  "rows": 10,
+  "columns": 12,
+  "width": 360,
+  "height": 500,
+  "bounds": {"x": 50, "y": 90, "width": 260, "height": 380},
+  "outline": "M92 100 L132 92 Q180 144 228 92 L268 100 L278 194 L310 230 L294 470 H66 L50 230 L82 194 Z",
+  "sizes": [
+    {"id": "small", "label": "Small", "columns": 2, "rows": 2},
+    {"id": "medium", "label": "Medium", "columns": 4, "rows": 3},
+    {"id": "large", "label": "Large", "columns": 6, "rows": 4}
+  ]
+}

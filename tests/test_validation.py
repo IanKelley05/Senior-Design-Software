@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 import unittest
 from uuid import uuid4
 
-from rhit.processing import parse_regions, validate_hit, validate_name, vest_layout
+from rhit.processing import parse_regions, validate_hit, validate_name
 
 
 class ValidationTests(unittest.TestCase):
@@ -31,11 +31,3 @@ class ValidationTests(unittest.TestCase):
         for value in ("", "chest,chest", "UPPER", "a b", ",chest"):
             with self.assertRaises(ValueError):
                 parse_regions(value)
-
-    def test_configured_regions_define_svg_positions(self):
-        layout = vest_layout(["chest-left", "chest-right", "abdomen"])
-        self.assertEqual([item["id"] for item in layout], ["chest-left", "chest-right", "abdomen"])
-        self.assertEqual(layout[0]["y"], layout[1]["y"])
-        self.assertGreater(layout[1]["x"], layout[0]["x"])
-        self.assertGreater(layout[2]["y"], layout[0]["y"])
-        self.assertEqual(layout[2]["width"], layout[0]["width"] + layout[1]["width"])

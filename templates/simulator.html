@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RHIT | Interactive glove simulator</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='simulator.css') }}">
+<script id="vest-config" type="application/json">{{ grid|tojson }}</script>
+<script defer src="{{ url_for('static', filename='vest.js') }}"></script><script defer src="{{ url_for('static', filename='simulator.js') }}"></script></head>
+<body><main>
+<header><div class="brand"><span class="brand-mark">R</span><div><h1>RHIT <span>Interactive glove simulator</span></h1><p>Choose your impact, then click the vest.</p></div></div><a class="badge" href="{{ main_url }}" target="_blank" rel="noopener">Open main dashboard ↗</a></header>
+<div class="connection"><span id="sender-status" role="status">Connecting to the receiver…</span><span class="badge">SIMULATED GLOVE + VEST</span></div>
+<div class="simulator-layout">
+<section class="panel settings"><p class="eyebrow">01 / GLOVE MEASUREMENT</p><h2>How hard?</h2><p class="caption">Simulated estimated force</p>
+<div class="force-value"><output id="force-value">250</output><span>N</span></div>
+<label for="force">Force in newtons</label><input id="force" type="range" min="0" max="1000" step="25" value="250">
+<div class="range-labels"><span>0 N</span><span>1,000 N</span></div>
+<div class="force-presets"><button type="button" data-force="100">Light <span>100 N</span></button><button type="button" data-force="250" class="selected">Medium <span>250 N</span></button><button type="button" data-force="600">Hard <span>600 N</span></button></div>
+<p class="caption">Force comes from the glove unit in the real product. This demo supplies a value directly; size does not change it.</p></section>
+<section class="panel target-panel"><div class="section-title"><h2>Land a hit</h2><span class="subtle">FRONT VIEW</span></div>
+<p class="caption" id="target-session">No active session</p>
+<canvas id="target-vest" tabindex="0" role="button" aria-label="Interactive vest. Click a location or use arrow keys to aim and Enter to hit."></canvas>
+<p id="aim-label" class="caption">12 copper-wire columns × 10 rows</p>
+<p class="caption">Move to preview · Click to hit<br>Keyboard: arrows to aim, Enter or Space to hit</p>
+</section>
+<section class="panel settings"><p class="eyebrow">02 / CONTACT FOOTPRINT</p><h2>How large?</h2><p class="caption">One impact can bridge several wires.</p>
+<div class="size-options">{% for size in grid.sizes %}<button type="button" data-size="{{ size.id }}" class="{{ 'selected' if size.id == 'medium' else '' }}"><span class="size-icon size-{{ size.id }}"></span><strong>{{ size.label }}</strong><span>{{ size.columns }} columns × {{ size.rows }} rows</span></button>{% endfor %}</div>
+<p class="caption">The circle previews the footprint extent. Active row/column combinations estimate the contact area; one footprint is one hit.</p></section>
+</div>
+<section class="panel sender-result"><div><p class="eyebrow">DELIVERY</p><p id="send-message" role="status">Start a session in the main dashboard to begin.</p><p id="wire-message" class="caption">No hit sent yet.</p></div><button id="repeat-hit" type="button" class="secondary" disabled>Repeat last packet</button></section>
+<footer><span>Independent sender → UDP → main receiver → PostgreSQL → live heatmap</span><span>Temporary complete-hit demo</span></footer>
+</main></body></html>

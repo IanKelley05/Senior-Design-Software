@@ -70,8 +70,8 @@ async def verify(app, base):
             await expect(page.locator("#maximum-force")).to_have_text("300")
             shown_average = float((await page.locator("#average-force").inner_text()).replace(",", ""))
             assert abs(shown_average - stats["average"]) < .01
-            for row in distribution:
-                await expect(page.locator(f'[data-count-region="{row["region"]}"]')).to_have_text(str(row["count"]))
+            await expect(page.locator("#vest")).to_have_attribute("data-spatial-hits", "0")
+            await expect(page.locator("#unmapped-regions")).to_contain_text(str(accepted) + " legacy")
             await expect(page.locator("#udp-accepted")).to_have_text(str(accepted))
             await expect(page.locator("#udp-invalid")).to_have_text("6")
             # A second real process must fail before it starts another receiver.
@@ -89,7 +89,7 @@ async def verify(app, base):
             await expect(page.locator("#hit-count")).to_have_text(str(accepted))
             await page.screenshot(path=str(ROOT / ".local" / "udp-verified.png"), full_page=True)
             assert not errors, errors
-            print(f"PASS: CLI sent {received + 1} datagrams; {accepted} committed hits displayed correctly in PostgreSQL, SVG, table and statistics.")
+            print(f"PASS: CLI sent {received + 1} datagrams; {accepted} committed hits displayed correctly in PostgreSQL, legacy history and statistics.")
             print(f"PASS: {len(regions) + 2} duplicates, 6 invalid packets, 3 inactive-session packets; second receiver process refused.")
             print("Screenshot: .local/udp-verified.png")
         finally:

@@ -23,6 +23,7 @@ def create_app(test_config=None):
         PGCONNECT_TIMEOUT=max(2, int(os.getenv("PGCONNECT_TIMEOUT", "3"))),
         UDP_HOST=os.getenv("UDP_HOST", "127.0.0.1"),
         UDP_PORT=int(os.getenv("UDP_PORT", "5005")),
+        SIMULATOR_URL="http://127.0.0.1:" + os.getenv("SIMULATOR_PORT", "5001"),
         VEST_REGIONS=os.getenv("VEST_REGIONS", "upper-left,upper-right,middle-left,middle-right,lower-left,lower-right"),
         HIT_FUTURE_TOLERANCE_SECONDS=int(os.getenv("HIT_FUTURE_TOLERANCE_SECONDS", "5")),
         MAX_CONTENT_LENGTH=16384,

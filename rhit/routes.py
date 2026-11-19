@@ -1,4 +1,4 @@
-﻿"""HTTP validation and formatting; SQL stays in database.py."""
+"""HTTP validation and formatting; SQL stays in database.py."""
 
 from datetime import datetime
 from uuid import UUID
@@ -8,6 +8,7 @@ import psycopg
 from werkzeug.exceptions import BadRequest, UnsupportedMediaType, RequestEntityTooLarge
 
 from . import database, processing, reception
+from .vest import GRID
 
 web = Blueprint("web", __name__)
 
@@ -55,7 +56,7 @@ def database_error(error):
 
 @web.get("/")
 def dashboard():
-    return render_template("dashboard.html", regions=processing.vest_layout(current_app.config["VEST_REGIONS"]),
+    return render_template("dashboard.html", grid=GRID, simulator_url=current_app.config["SIMULATOR_URL"],
                            database=database.check_connection(current_app.config))
 
 
@@ -75,6 +76,15 @@ def udp_status():
 @web.get("/api/sessions")
 def sessions():
     return jsonify(serializable(database.list_sessions(current_app.config)))
+
+
+@web.get("/api/events/<uuid:event_id>")
+def event_receipt(event_id):
+    with database.connect(current_app.config) as connection:
+        hit = connection.execute("SELECT * FROM hits WHERE event_id=%s", (event_id,)).fetchone()
+    if hit is None:
+        return jsonify(found=False), 404
+    return jsonify(found=True, hit=serializable(hit))
 
 
 @web.post("/api/sessions")

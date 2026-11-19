@@ -1,17 +1,15 @@
-﻿// One polling loop, one selected-session ID. No active-session data is merged
+// One polling loop, one selected-session ID. No active-session data is merged
 // into the selected view; late responses are invalidated on every switch.
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 250;
 const LIST_MS = 2000;
-const regionNodes = new Map([...document.querySelectorAll('.vest-region')].map(node => [node.dataset.region, node]));
-const countNodes = new Map([...document.querySelectorAll('[data-count-region]')].map(node => [node.dataset.countRegion, node]));
-const listCountNodes = new Map([...document.querySelectorAll('[data-list-count]')].map(node => [node.dataset.listCount, node]));
+const grid = JSON.parse($('vest-config').textContent);
+const vest = new RhitVest($('vest'), grid);
 let active = null;
 let selectedId = '';
 let renderedId = '';
 let seenEvents = new Set();
 let lastSignature = '';
-let lastDelivery = null;
 let busy = false;
 let ready = false;
 let generation = 0;
@@ -19,7 +17,6 @@ let timer;
 let pollController;
 let nextListAt = 0;
 let listSignature = '';
-const flashTimers = new Map();
 const localTime = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
 const forceText = value => value === null ? '—' : new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 
@@ -38,14 +35,11 @@ async function api(path, method = 'GET', data, signal) {
 function controls() {
   $('start-session').disabled = busy || !ready || Boolean(active);
   $('end-session').disabled = busy || !ready || !active;
-  $('send-hit').disabled = busy || !ready || !active;
-  $('replay-hit').disabled = busy || !ready || !active || !lastDelivery || lastDelivery.sessionId !== active.id;
   $('view-active').disabled = !active || String(active.id) === selectedId;
 }
 
 function recordingLabel() {
   $('active-session').textContent = active ? 'Recording: ' + active.name + ' (#' + active.id + ')' : 'No active session';
-  $('simulator-target').textContent = active ? 'Simulator target: ' + active.name + ' (#' + active.id + '). Viewing another session does not change this target.' : 'Start a session to accept simulated hits.';
   controls();
 }
 
@@ -53,10 +47,7 @@ function resetView() {
   renderedId = '';
   seenEvents = new Set();
   lastSignature = '';
-  for (const [id, node] of regionNodes) {
-    clearTimeout(flashTimers.get(id));
-    node.classList.remove('hit-flash');
-  }
+  vest.clear();
   $('selected-title').textContent = selectedId ? 'Loading selected session…' : 'No session selected';
   $('session-times').textContent = '';
   $('view-mode').textContent = selectedId ? 'Loading' : 'No saved sessions';
@@ -67,44 +58,23 @@ function resetView() {
   $('empty-hits').hidden = false;
   $('empty-hits').textContent = selectedId ? 'Loading saved hits…' : 'No hits recorded. Start a session to begin.';
   $('history-count').textContent = '0 records';
-  paintRegions([], new Set());
+  paintHeat([], []);
 }
 
-function heatColor(count, maximum) {
-  if (!count) return '#293441';
-  const t = maximum <= 1 ? 1 : (count - 1) / (maximum - 1);
-  return 'rgb(' + [99, 72, 32].map((base, i) => Math.round(base + ([243, 188, 87][i] - base) * t)).join(',') + ')';
-}
-
-function paintRegions(regions, newRegions) {
-  const counts = new Map(regions.map(item => [item.region, item.hit_count]));
-  const maximum = Math.max(1, ...counts.values());
-  $('legend-max').textContent = maximum + (maximum === 1 ? ' hit' : ' hits');
-  document.querySelector('.legend-gradient').style.background = maximum === 1 ? '#f3bc57' : '';
-  for (const [id, node] of regionNodes) {
-    const count = counts.get(id) || 0;
-    node.querySelector('rect').setAttribute('fill', heatColor(count, maximum));
-    node.querySelector('title').textContent = id + ': ' + count + ' hits';
-    countNodes.get(id).textContent = count;
-    listCountNodes.get(id).textContent = count;
-    if (newRegions.has(id)) {
-      clearTimeout(flashTimers.get(id));
-      node.classList.remove('hit-flash');
-      void node.getBoundingClientRect(); // Restart a brief pulse for another new hit.
-      node.classList.add('hit-flash');
-      flashTimers.set(id, setTimeout(() => node.classList.remove('hit-flash'), 800));
-    }
-  }
-  const unmapped = regions.filter(item => !regionNodes.has(item.region));
-  $('unmapped-regions').hidden = !unmapped.length;
-  $('unmapped-regions').textContent = 'Historical regions outside the current layout: ' + unmapped.map(item => item.region + ' (' + item.hit_count + ' hits)').join(', ') + '. Included in totals and history.';
+function paintHeat(hits, fresh) {
+  vest.setHits(hits, fresh);
+  $('grid-summary').textContent = vest.contacts.length + ' spatial hits / Peak estimated wire coverage: ' + vest.peak + ' hits';
+  const legacy = hits.filter(hit => !hit.contact).length;
+  const mismatch = hits.filter(hit => hit.contact && !vest.matches(hit.contact)).length;
+  $('unmapped-regions').hidden = !legacy && !mismatch;
+  $('unmapped-regions').textContent = (legacy ? legacy + ' legacy region-only hits have no wire coordinates. ' : '') + (mismatch ? mismatch + ' hits use a different grid size. ' : '') + 'These remain in totals and history but are not assigned invented positions on this heatmap.';
 }
 
 function displayDetail(detail) {
   if (String(detail.session.id) !== selectedId) return;
   const { session, hits } = detail;
   const sameSession = renderedId === selectedId;
-  const newRegions = new Set(sameSession ? hits.filter(hit => !seenEvents.has(hit.event_id)).map(hit => hit.region) : []);
+  const newHits = sameSession ? hits.filter(hit => !seenEvents.has(hit.event_id)) : [];
   renderedId = selectedId;
   seenEvents = new Set(hits.map(hit => hit.event_id));
   $('selected-title').textContent = session.name + ' (#' + session.id + ')';
@@ -117,15 +87,15 @@ function displayDetail(detail) {
   if (!session.ended_at) active = session;
   else if (active && active.id === session.id) active = null;
   recordingLabel();
-  paintRegions(detail.regions, newRegions);
   const signature = selectedId + ':' + hits.map(hit => hit.event_id).join(',');
   if (signature !== lastSignature) {
     lastSignature = signature;
+    paintHeat(hits, newHits);
     $('hit-rows').replaceChildren();
     for (const hit of [...hits].reverse()) {
       const row = document.createElement('tr');
       row.dataset.eventId = hit.event_id;
-      for (const value of [localTime.format(new Date(hit.timestamp)), hit.region, forceText(hit.force_n)]) {
+      for (const value of [localTime.format(new Date(hit.timestamp)), hit.contact ? 'R ' + hit.contact.rows.join(',') + ' / C ' + hit.contact.columns.join(',') : 'Legacy: ' + hit.region, forceText(hit.force_n)]) {
         const cell = document.createElement('td');
         cell.textContent = value;
         row.append(cell);
@@ -245,23 +215,6 @@ $('end-session').addEventListener('click', () => action(async () => {
   active = null;
   $('action-message').textContent = 'Recording ended. All hits remain saved.';
 }));
-async function deliver() {
-  if (!lastDelivery) return;
-  const response = await api('/api/sessions/' + lastDelivery.sessionId + '/hits', 'POST', lastDelivery.hit);
-  $('action-message').textContent = response.inserted ? 'Simulated hit saved to session #' + lastDelivery.sessionId + '.' : 'Duplicate recognized. Saved hit count is unchanged.';
-}
-$('hit-form').addEventListener('submit', event => {
-  event.preventDefault();
-  action(async () => {
-    if (!active) return;
-    const force = Number($('hit-force').value);
-    if (!Number.isFinite(force) || force < 0) throw new Error('Force must be finite and nonnegative.');
-    lastDelivery = { sessionId: active.id, hit: { event_id: crypto.randomUUID(), timestamp: new Date().toISOString(), region: $('hit-region').value, force_n: force } };
-    $('last-event').textContent = 'Last simulated event: ' + lastDelivery.hit.event_id;
-    await deliver();
-  });
-});
-$('replay-hit').addEventListener('click', () => action(deliver));
 $('saved-sessions').addEventListener('change', () => selectSession($('saved-sessions').value));
 $('view-active').addEventListener('click', () => { if (active) selectSession(active.id); });
 $('check-connection').addEventListener('click', () => restartPolling(true));

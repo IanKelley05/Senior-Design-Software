@@ -158,6 +158,7 @@ class PostgresTests(unittest.TestCase):
             wait_for(lambda: receiver.snapshot()["counters"]["received"] == expected_received and receiver.snapshot()["in_flight"] == 0)
         send(packet(0), 1)
         self.assertEqual(receiver.snapshot()["counters"]["inactive_session"], 1)
+
         sid = self.start()
         original = packet(1)
         send(original, 2)
@@ -181,3 +182,42 @@ class PostgresTests(unittest.TestCase):
         self.client.post(f"/api/sessions/{sid}/end")
         send(packet(3), 2)
         self.assertEqual(receiver.snapshot()["counters"]["inactive_session"], 1)
+
+    def test_spatial_footprint_counts_once_and_migrates_repeatably(self):
+        sid = self.start()
+        path = f"/api/sessions/{sid}/hits"
+        legacy = self.hit(force_n=100)
+        self.assertEqual(self.client.post(path, json=legacy).status_code, 201)
+        grid_hit = self.hit(force_n=500)
+        del grid_hit["region"]
+        grid_hit["contact"] = {"rows": [4, 5, 6], "columns": [5, 6, 7, 8]}
+        self.assertEqual(self.client.post(path, json=grid_hit).status_code, 201)
+        self.assertEqual(self.client.post(path, json=grid_hit).status_code, 200)
+        reordered = {**grid_hit, "contact": {"rows": [6, 4, 5], "columns": [8, 7, 6, 5]}}
+        self.assertEqual(self.client.post(path, json=reordered).status_code, 200)
+        self.assertEqual(self.client.post(path, json={**grid_hit, "contact": {"rows": [4], "columns": [5]}}).status_code, 409)
+        before = self.client.get(path).json
+        self.assertEqual(before["session"]["hit_count"], 2)
+        self.assertEqual(before["session"]["average_force_n"], 300)
+        self.assertIsNone(before["hits"][0]["contact"])
+        self.assertEqual(before["hits"][1]["contact"]["grid_columns"], 12)
+        result = self.app.test_cli_runner().invoke(args=["init-db"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        fresh = create_app({"TESTING": True, "PGDATABASE": os.environ["RHIT_TEST_DATABASE"]}).test_client()
+        self.assertEqual(fresh.get(path).json, before)
+
+    def test_upgrade_from_original_region_schema_preserves_records(self):
+        sid = self.start()
+        path = f"/api/sessions/{sid}/hits"
+        self.client.post(path, json=self.hit(force_n=125))
+        with database.connect(self.config) as conn:
+            # Reconstruct the pre-migration schema only in this disposable schema.
+            conn.execute("ALTER TABLE hits DROP COLUMN contact")
+            conn.execute("ALTER TABLE hits ALTER COLUMN region SET NOT NULL")
+            conn.execute("DROP TABLE schema_migrations")
+        result = self.app.test_cli_runner().invoke(args=["init-db"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        detail = self.client.get(path).json
+        self.assertEqual(detail["session"]["hit_count"], 1)
+        self.assertEqual(detail["hits"][0]["force_n"], 125)
+        self.assertIsNone(detail["hits"][0]["contact"])

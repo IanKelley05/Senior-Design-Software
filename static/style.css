@@ -1,4 +1,4 @@
-﻿:root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; background: #101419; color: #edf0f4; font-size: 14px; }
+:root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; background: #101419; color: #edf0f4; font-size: 14px; }
 * { box-sizing: border-box; }
 body { margin: 0; }
 main { max-width: 1280px; margin: auto; padding: 26px 30px; }
@@ -38,22 +38,18 @@ label { display: block; margin-bottom: 6px; font-size: 12px; }
 .stat > span { font-size: 11px; color: #9caaba; }
 .layout { display: grid; grid-template-columns: 1fr 1.05fr; gap: 18px; }
 .subtle { font-size: 10px; color: #aab8c8; }
-.vest-layout { display: grid; grid-template-columns: 1.2fr 1fr; align-items: center; gap: 12px; margin-top: 16px; }
 #vest { width: 100%; max-height: 330px; overflow: visible; }
-.vest-region rect { stroke: #101419; stroke-width: 3px; transition: fill 150ms; }
-.vest-region.hit-flash rect { animation: hit-flash 800ms ease-out; }
-@keyframes hit-flash { 0%,35% { stroke: #fff; stroke-width: 9px; filter: brightness(1.65); } 100% { stroke: #101419; stroke-width: 3px; filter: brightness(1); } }
-.vest-label text { text-anchor: middle; fill: #fff; paint-order: stroke; stroke: #101419; stroke-width: 2px; stroke-linejoin: round; }
-.region-number { font-size: 12px; }.region-value { font-size: 24px; font-weight: 700; }
-.region-list { padding: 0; margin: 0; list-style: none; }
-.region-list li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; padding: 10px 0; border-bottom: 1px solid #303a47; font-size: 12px; overflow-wrap: anywhere; }
-.region-key { color: #d9bd7f; font-size: 10px; }
 .legend { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 22px; margin: 15px 0 8px; font-size: 11px; color: #b9c2cd; }
 .legend > span { display: flex; align-items: center; gap: 6px; }
 .zero-swatch { display: inline-block; width: 14px; height: 14px; background: #293441; border: 1px solid #647184; }
 .legend-gradient { height: 10px; border-radius: 3px; background: linear-gradient(to right,#634820,#f3bc57); }
 .legend-labels { display: flex; justify-content: space-between; margin-top: 5px; }
 .caption { font-size: 11px; margin-top: 9px; }
+.continuous-vest { display: flex; justify-content: center; padding: 12px 0; }
+.continuous-vest #vest { width: 100%; height: auto; max-width: 340px; max-height: none; }
+.legend-gradient { background: linear-gradient(to right, #25313e, #268ba8, #ffc462, #ff5b46); }
+a { color: #dec58e; }
+td:nth-child(2) { overflow-wrap: anywhere; max-width: 190px; }
 .table-scroll { overflow: auto; max-height: 355px; margin-top: 14px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th,td { text-align: left; padding: 12px 10px; border-bottom: 1px solid #343c46; }
@@ -68,12 +64,8 @@ td { font-variant-numeric: tabular-nums; }
 .udp-counts dt { font-size: 11px; color: #b9c2cd; }
 .udp-counts dd { margin: 5px 0 0; font-size: 22px; font-variant-numeric: tabular-nums; }
 @media(max-width:720px) { .udp-counts { grid-template-columns: repeat(3, 1fr); } }
-summary { cursor: pointer; font-weight: 600; } summary span { font-size: 12px; font-weight: 400; color: #9caaba; margin-left: 12px; }
-#simulator-target { margin-top: 14px; }
-#hit-form { display: flex; align-items: end; gap: 14px; margin-top: 14px; }
-#hit-form > div { flex: 1; } #last-event { overflow-wrap: anywhere; }
 footer { margin-top: 20px; color: #8f9dad; font-size: 10px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
-@media(prefers-reduced-motion:reduce) { .vest-region.hit-flash rect { animation: none; stroke: #fff; stroke-width: 6px; } .vest-region rect { transition: none; } }
+@media(prefers-reduced-motion:reduce) { html { scroll-behavior: auto; } }
 @media(max-width:1000px) { .session-controls { grid-template-columns: 1fr; gap: 18px; } .session-picker { border-left: 0; padding-left: 0; } #hit-form { flex-wrap: wrap; } .vest-layout { grid-template-columns: 1fr; } #vest { height: 260px; } .region-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; } }
 @media(max-width:720px) { main { padding: 18px 14px; } header { align-items: start; flex-direction: column; } .stats { grid-template-columns: 1fr; } .layout { grid-template-columns: 1fr; } #start-form { flex-wrap: wrap; } h1 span { display: block; margin: 3px 0 0; } footer { flex-direction: column; align-items: start; } summary span { display: block; margin: 5px 0; } }
