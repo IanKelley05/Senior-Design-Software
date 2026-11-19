@@ -52,9 +52,10 @@ The same canvas renderer is used by both websites. Faint copper lines show the
 wires; they are no longer separate colored regions or quadrants.
 
 A hit carries arrays of activated rows and columns. Their combinations estimate
-a contact area. The smooth heatmap displays interpolated **contact coverage**,
-not force or a measured pressure distribution. Color scales to the selected
-session's busiest wire crossing; the peak coverage count is shown. A broad
+a contact area. Switch between **Coverage** (hit count at each potential crossing)
+and **Force** (highest simulated estimated glove force at each crossing, in N).
+Neither mode measures pressure or force separately at individual wires. Color
+scales to the full selected session's maximum for the chosen metric. A broad
 footprint does not multiply the session hit count or its force value. In real
 hardware, separate row/column lists alone may not identify the exact contact
 intersections; that mapping and multi-glove association need team confirmation.
@@ -62,6 +63,44 @@ intersections; that mapping and multi-glove association need team confirmation.
 The sender's force control represents a future glove measurement. Size only
 changes the wire footprint. Force is stored once per hit, unchanged. The app
 labels it **simulated estimated force**, and empty sessions show no force value.
+
+## Replay a completed session
+
+End a session, or select a saved ended session, then use the controls above the
+vest:
+
+- **Play / Pause**: reveal hits cumulatively in a **30-second** replay.
+- **Previous hit / Next hit**: pause and move exactly one saved event at a time.
+  Stepping back removes the later events from the heatmap, including their force.
+- **Restart**: pause on the blank frame before the first hit.
+- **Full session**: exit replay and show the complete heatmap.
+- The position slider seeks to an exact hit and pauses playback.
+- **Coverage / Force** can be toggled while playing or paused without resetting
+  the position or playback clock.
+
+Hits use the database's chronological order (timestamp, then event UUID for
+ties). Each hit occupies an equal `30 / number_of_hits` seconds: the first appears
+immediately and the last remains visible until the full 30 seconds have elapsed.
+A one-hit session holds that hit for 30 seconds. This deliberately removes real
+idle gaps; it is an event replay, not a video or reproduction of original timing.
+Pause time is not included. Switching sessions resets the player; hiding the tab
+pauses it so the session does not silently finish in the background.
+
+The white footprint and outlined table row identify the current hit. Later rows
+are dimmed. The total/average/maximum cards always show the **complete session**;
+the replay progress and current-hit readout describe the current frame. Both
+color scales stay fixed to the selected session during replay, so an early light
+hit cannot appear as strong as a later hard hit just because it appeared first.
+Force uses a **maximum**, not a sum or average: many light hits remain high
+coverage, while one hard hit can dominate the force map. A zero-force hit still
+appears in coverage/history but contributes no force intensity.
+
+Legacy hits without compatible wire coordinates still take a replay step and
+appear in the table/readout, but receive no invented spatial footprint. Empty
+sessions have disabled replay controls. Very dense sessions may reveal several
+hits per browser frame; every hit contributes, and each remains individually
+accessible with the step buttons. Replay changes no saved data and needs no new
+database migration.
 
 See [wire-grid demo and protocol v2](docs/wire-grid-demo.md) for packet examples,
 coordinate conventions, estimation assumptions, validation and migration details.
@@ -210,8 +249,14 @@ $env:RHIT_TEST_DATABASE = 'rhit_test'
 .\.venv\Scripts\python.exe scripts\verify_interactive.py
 .\.venv\Scripts\python.exe scripts\verify_dashboard.py
 .\.venv\Scripts\python.exe scripts\verify_udp.py
+.\.venv\Scripts\python.exe scripts\verify_replay.py
 Remove-Item Env:RHIT_TEST_DATABASE
 ```
+
+The replay browser check measures an actual uninterrupted 30-second run and
+tests mode switching, backtracking, fixed scales, pauses and session isolation.
+For fast deterministic clock checks, including 1-hit and 3,000-hit sessions,
+run `node tests/replay.test.js` (requires Node.js).
 
 Tests use disposable schemas and temporary server ports; they do not alter demo
 sessions. The interactive test drives both real websites and checks different
@@ -242,6 +287,7 @@ This leaves an ended legacy verification session in your configured database.
 | `simulator_web.py` | Independent website: validates clicks' packets, sends UDP, reads confirmation. |
 | `simulator.py` | Legacy terminal-only v1 sender and malformed-packet checks. |
 | `config/vest.json`, `static/vest.js` | Shared grid geometry, size presets, continuous heatmap rendering. |
+| `static/replay.js` | Pure 30-second replay clock and exact-hit position controls. |
 | `templates/`, `static/` | Dashboard and simulator UI, styling and polling. |
 | `tests/`, `scripts/verify_*.py` | Backend, database and real-browser verification. |
 

@@ -36,7 +36,7 @@ async function transmit(packet) {
     if(!response.ok) throw new Error(result.error || 'Send failed');
     $('send-message').textContent='Sent by UDP. Waiting for the main receiver to confirm…';
     $('wire-message').textContent='Rows '+packet.rows.join(', ')+' · Columns '+packet.columns.join(', ')+' · '+packet.simulated_force_n+' N · One event';
-    target.setHits([{contact:{rows:packet.rows,columns:packet.columns,grid_rows:grid.rows,grid_columns:grid.columns}}]);
+    target.setHits([{force_n:packet.simulated_force_n,contact:{rows:packet.rows,columns:packet.columns,grid_rows:grid.rows,grid_columns:grid.columns}}]);
     let confirmed=false;
     for(let i=0;i<12;i++){
       await new Promise(resolve=>setTimeout(resolve,150));

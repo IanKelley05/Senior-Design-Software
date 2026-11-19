@@ -39,15 +39,32 @@ class RhitVest {
   matches(contact) {
     return contact && contact.grid_rows === this.grid.rows && contact.grid_columns === this.grid.columns;
   }
-  setHits(hits, fresh = []) {
-    const g = this.grid;
-    this.contacts = hits.filter(hit => this.matches(hit.contact)).map(hit => hit.contact);
-    this.counts = Array.from({length: g.rows}, () => Array(g.columns).fill(0));
-    for (const c of this.contacts) for (const row of c.rows) for (const col of c.columns) this.counts[row - 1][col - 1]++;
-    this.peak = Math.max(0, ...this.counts.flat());
+  static fields(hits, grid) {
+    const mapped = hits.filter(hit => hit.contact && hit.contact.grid_rows === grid.rows && hit.contact.grid_columns === grid.columns);
+    const counts = Array.from({length: grid.rows}, () => Array(grid.columns).fill(0));
+    const forces = Array.from({length: grid.rows}, () => Array(grid.columns).fill(0));
+    for (const hit of mapped) for (const row of hit.contact.rows) for (const col of hit.contact.columns) {
+      counts[row - 1][col - 1]++;
+      forces[row - 1][col - 1] = Math.max(forces[row - 1][col - 1], hit.force_n);
+    }
+    return {mapped, counts, forces, peak: Math.max(0, ...counts.flat()), peakForce: Math.max(0, ...forces.flat())};
+  }
+  setHits(hits, fresh = [], options = {}) {
+    const g = this.grid, fields = RhitVest.fields(hits, g);
+    this.mode = options.mode || this.mode || 'coverage';
+    this.contacts = fields.mapped.map(hit => hit.contact);
+    this.counts = fields.counts;
+    this.forces = fields.forces;
+    this.peak = fields.peak;
+    this.peakForce = fields.peakForce;
+    this.values = this.mode === 'force' ? this.forces : this.counts;
+    this.scaleMaximum = options.scaleMaximum ?? (this.mode === 'force' ? this.peakForce : this.peak);
     this.canvas.dataset.spatialHits = this.contacts.length;
     this.canvas.dataset.peakCoverage = this.peak;
-    this.canvas.setAttribute('aria-label', this.contacts.length + ' spatial hits. Peak estimated wire coverage: ' + this.peak + ' hits. Faint lines show ' + g.columns + ' columns and ' + g.rows + ' rows.');
+    this.canvas.dataset.peakForce = this.peakForce;
+    this.canvas.dataset.heatMode = this.mode;
+    this.canvas.dataset.scaleMaximum = this.scaleMaximum;
+    this.canvas.setAttribute('aria-label', this.contacts.length + ' spatial hits. ' + (this.mode === 'force' ? 'Peak simulated estimated force: ' + this.peakForce + ' N.' : 'Peak estimated wire coverage: ' + this.peak + ' hits.') + ' Faint lines show ' + g.columns + ' columns and ' + g.rows + ' rows.');
     this.buildHeat();
     for (const hit of fresh) if (this.matches(hit.contact)) this.pulses.push({contact: hit.contact, at: performance.now()});
     this.draw();
@@ -58,19 +75,19 @@ class RhitVest {
     const ctx = this.surface.getContext('2d');
     const width = this.surface.width, height = this.surface.height;
     const image = ctx.createImageData(width, height);
-    const sample = (r,c) => this.counts[r]?.[c] || 0;
-    if (this.peak) for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const sample = (r,c) => this.values[r]?.[c] || 0;
+    if (this.scaleMaximum) for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
       const gx = (x * 2 - b.x) / b.width * g.columns - .5;
       const gy = (y * 2 - b.y) / b.height * g.rows - .5;
       const c = Math.floor(gx), r = Math.floor(gy), fx = gx - c, fy = gy - r;
       const value = sample(r,c)*(1-fx)*(1-fy) + sample(r,c+1)*fx*(1-fy) + sample(r+1,c)*(1-fx)*fy + sample(r+1,c+1)*fx*fy;
-      if (value <= .01) continue;
-      const t = value / this.peak;
+      if (value <= 0) continue;
+      const t = Math.min(1, value / this.scaleMaximum);
       const stops = [[38,139,168],[255,196,98],[255,91,70]];
       const i = t < .5 ? 0 : 1, mix = t < .5 ? t*2 : (t-.5)*2;
       const offset = (y * width + x) * 4;
       for (let k=0;k<3;k++) image.data[offset+k] = stops[i][k] + mix*(stops[i+1][k]-stops[i][k]);
-      image.data[offset+3] = Math.min(1, value * 1.5) * 240;
+      image.data[offset+3] = Math.min(1, t * 1.5) * 240;
     }
     ctx.putImageData(image,0,0);
   }

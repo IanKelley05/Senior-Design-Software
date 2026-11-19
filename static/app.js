@@ -17,6 +17,12 @@ let timer;
 let pollController;
 let nextListAt = 0;
 let listSignature = '';
+let latestDetail = null;
+let heatMode = 'coverage';
+let fullFields = RhitVest.fields([], grid);
+const replay = new RhitReplay();
+let replayFrame = null;
+let paintedCount = -1;
 const localTime = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
 const forceText = value => value === null ? '—' : new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 
@@ -44,6 +50,13 @@ function recordingLabel() {
 }
 
 function resetView() {
+  cancelAnimationFrame(replayFrame);
+  replayFrame = null;
+  latestDetail = null;
+  replay.reset(0);
+  fullFields = RhitVest.fields([], grid);
+  vest.preview = null;
+  paintedCount = -1;
   renderedId = '';
   seenEvents = new Set();
   lastSignature = '';
@@ -59,20 +72,92 @@ function resetView() {
   $('empty-hits').textContent = selectedId ? 'Loading saved hits…' : 'No hits recorded. Start a session to begin.';
   $('history-count').textContent = '0 records';
   paintHeat([], []);
+  replayControls();
 }
 
 function paintHeat(hits, fresh) {
-  vest.setHits(hits, fresh);
-  $('grid-summary').textContent = vest.contacts.length + ' spatial hits / Peak estimated wire coverage: ' + vest.peak + ' hits';
-  const legacy = hits.filter(hit => !hit.contact).length;
-  const mismatch = hits.filter(hit => hit.contact && !vest.matches(hit.contact)).length;
+  const maximum = heatMode === 'force' ? fullFields.peakForce : fullFields.peak;
+  vest.setHits(hits, fresh, {mode: heatMode, scaleMaximum: maximum});
+  $('mode-coverage').setAttribute('aria-pressed', String(heatMode === 'coverage'));
+  $('mode-force').setAttribute('aria-pressed', String(heatMode === 'force'));
+  $('heat-description').textContent = heatMode === 'force' ? 'Force: highest simulated estimated glove force recorded at each potential wire crossing (N). Not force per wire or pressure.' : 'Coverage: number of hits covering each potential wire crossing.';
+  $('legend-zero').textContent = heatMode === 'force' ? '0 N / no force' : '0 hits';
+  $('legend-low').textContent = heatMode === 'force' ? 'Lower force' : 'Lower coverage';
+  $('legend-high').textContent = forceText(maximum) + (heatMode === 'force' ? ' N' : ' hits');
+  $('grid-summary').textContent = vest.contacts.length + ' spatial hits shown / ' + (heatMode === 'force' ? 'Peak simulated estimated force: ' + forceText(vest.peakForce) + ' N' : 'Peak estimated wire coverage: ' + vest.peak + ' hits');
+  const sessionHits = latestDetail?.hits || hits;
+  const legacy = sessionHits.filter(hit => !hit.contact).length;
+  const mismatch = sessionHits.filter(hit => hit.contact && !vest.matches(hit.contact)).length;
   $('unmapped-regions').hidden = !legacy && !mismatch;
   $('unmapped-regions').textContent = (legacy ? legacy + ' legacy region-only hits have no wire coordinates. ' : '') + (mismatch ? mismatch + ' hits use a different grid size. ' : '') + 'These remain in totals and history but are not assigned invented positions on this heatmap.';
+}
+
+function replayAvailable() {
+  return Boolean(latestDetail?.session.ended_at && latestDetail.hits.length);
+}
+
+function replayControls() {
+  const available = replayAvailable();
+  $('replay-play').disabled = !available;
+  $('replay-play').textContent = replay.playing ? 'Pause' : (replay.elapsed >= replay.duration ? 'Play again' : 'Play');
+  $('replay-back').disabled = !available || (replay.active && replay.count === 0);
+  $('replay-next').disabled = !available || (replay.active && replay.count === replay.total);
+  $('replay-restart').disabled = !available;
+  $('replay-overview').disabled = !available || !replay.active;
+  $('replay-position').disabled = !available;
+  $('replay-position').max = replay.total;
+  $('replay-position').value = replay.active ? replay.count : replay.total;
+  $('replay-hint').textContent = !latestDetail?.session.ended_at ? 'End the session to replay its hits over 30 seconds.' : !replay.total ? 'This session has no hits to replay.' : '30 seconds total. Hits are evenly spaced, not played at their original timing. Stepping pauses playback.';
+  $('replay-progress').textContent = replay.active ? 'Hit ' + replay.count + ' / ' + replay.total + ' | ' + (replay.elapsed / 1000).toFixed(1) + ' / 30.0 s | ' + (replay.playing ? 'Playing' : 'Paused') : 'Full session view';
+  $('replay-progress').dataset.position = replay.active ? replay.count : replay.total;
+  $('replay-progress').dataset.playing = replay.playing;
+  $('replay-progress').dataset.elapsed = replay.elapsed;
+  const current = replay.active && replay.count ? latestDetail?.hits[replay.count - 1] : null;
+  $('replay-current').textContent = current ? localTime.format(new Date(current.timestamp)) + ' | ' + forceText(current.force_n) + ' N simulated estimated force' + (!vest.matches(current.contact) ? ' | No compatible grid coordinates for this hit.' : '') : 'Session totals above always describe the complete saved session.';
+}
+
+function renderScene(fresh = []) {
+  const hits = latestDetail?.hits || [];
+  const shown = replay.active ? hits.slice(0, replay.count) : hits;
+  const current = replay.active && replay.count ? hits[replay.count - 1] : null;
+  vest.preview = current && vest.matches(current.contact) ? current.contact : null;
+  paintHeat(shown, replay.active ? [] : fresh);
+  paintedCount = replay.count;
+  const revealed = new Set(shown.map(hit => hit.event_id));
+  for (const row of $('hit-rows').children) {
+    row.classList.toggle('replay-current', Boolean(current && row.dataset.eventId === current.event_id));
+    row.classList.toggle('replay-future', replay.active && !revealed.has(row.dataset.eventId));
+  }
+  replayControls();
+}
+
+function animateReplay(now) {
+  replayFrame = null;
+  replay.tick(now);
+  if (paintedCount !== replay.count) renderScene();
+  else replayControls();
+  if (replay.playing) replayFrame = requestAnimationFrame(animateReplay);
+}
+
+function pauseReplay() {
+  replay.pause(performance.now());
+  cancelAnimationFrame(replayFrame);
+  replayFrame = null;
+  renderScene();
+}
+
+function seekReplay(count) {
+  cancelAnimationFrame(replayFrame);
+  replayFrame = null;
+  replay.seek(count);
+  vest.pulses = [];
+  renderScene();
 }
 
 function displayDetail(detail) {
   if (String(detail.session.id) !== selectedId) return;
   const { session, hits } = detail;
+  latestDetail = detail;
   const sameSession = renderedId === selectedId;
   const newHits = sameSession ? hits.filter(hit => !seenEvents.has(hit.event_id)) : [];
   renderedId = selectedId;
@@ -90,7 +175,10 @@ function displayDetail(detail) {
   const signature = selectedId + ':' + hits.map(hit => hit.event_id).join(',');
   if (signature !== lastSignature) {
     lastSignature = signature;
-    paintHeat(hits, newHits);
+    fullFields = RhitVest.fields(hits, grid);
+    cancelAnimationFrame(replayFrame);
+    replayFrame = null;
+    replay.reset(hits.length);
     $('hit-rows').replaceChildren();
     for (const hit of [...hits].reverse()) {
       const row = document.createElement('tr');
@@ -106,7 +194,9 @@ function displayDetail(detail) {
     $('empty-hits').hidden = hits.length > 0;
     $('empty-hits').textContent = 'No hits recorded in this session.';
     $('history-count').textContent = hits.length + (hits.length === 1 ? ' record' : ' records');
+    renderScene(newHits);
   }
+  replayControls();
 }
 
 function updateSessions(sessions) {
@@ -215,9 +305,40 @@ $('end-session').addEventListener('click', () => action(async () => {
   active = null;
   $('action-message').textContent = 'Recording ended. All hits remain saved.';
 }));
+for (const mode of ['coverage', 'force']) $("mode-" + mode).addEventListener('click', () => {
+  // Toggling is purely visual: do not reset the replay position or clock.
+  heatMode = mode;
+  renderScene();
+});
+$('replay-play').addEventListener('click', () => {
+  if (!replayAvailable()) return;
+  if (replay.playing) { pauseReplay(); return; }
+  vest.pulses = [];
+  replay.play(performance.now());
+  renderScene();
+  replayFrame = requestAnimationFrame(animateReplay);
+});
+$('replay-back').addEventListener('click', () => {
+  if (replayAvailable()) seekReplay((replay.active ? replay.count : replay.total) - 1);
+});
+$('replay-next').addEventListener('click', () => {
+  if (replayAvailable()) seekReplay((replay.active ? replay.count : 0) + 1);
+});
+$('replay-restart').addEventListener('click', () => { if (replayAvailable()) seekReplay(0); });
+$('replay-position').addEventListener('input', () => { if (replayAvailable()) seekReplay(Number($('replay-position').value)); });
+$('replay-overview').addEventListener('click', () => {
+  cancelAnimationFrame(replayFrame);
+  replayFrame = null;
+  replay.overview();
+  vest.pulses = [];
+  renderScene();
+});
 $('saved-sessions').addEventListener('change', () => selectSession($('saved-sessions').value));
 $('view-active').addEventListener('click', () => { if (active) selectSession(active.id); });
 $('check-connection').addEventListener('click', () => restartPolling(true));
-document.addEventListener('visibilitychange', () => restartPolling(true));
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && replay.playing) pauseReplay();
+  restartPolling(true);
+});
 resetView();
 restartPolling(true);

@@ -49,6 +49,16 @@ label { display: block; margin-bottom: 6px; font-size: 12px; }
 .continuous-vest #vest { width: 100%; height: auto; max-width: 340px; max-height: none; }
 .legend-gradient { background: linear-gradient(to right, #25313e, #268ba8, #ffc462, #ff5b46); }
 a { color: #dec58e; }
+.heat-controls { display: flex; gap: 8px; margin-top: 16px; }
+.heat-controls button { background: #222e3a; color: #d5dce5; border: 1px solid #465365; }
+.heat-controls button[aria-pressed=true] { border-color: #dec58e; background: #3e382a; color: #ffe3a4; }
+.replay-panel { border-top: 1px solid #465365; margin-top: 18px; padding-top: 16px; }
+.replay-panel h3 { font-size: 15px; }
+.replay-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+.replay-buttons button { font-size: 12px; padding: 8px 10px; }
+#replay-position { accent-color: #dec58e; padding: 0; }
+tr.replay-current { outline: 2px solid #dec58e; outline-offset: -2px; background: #343328; }
+tr.replay-future { opacity: .4; }
 td:nth-child(2) { overflow-wrap: anywhere; max-width: 190px; }
 .table-scroll { overflow: auto; max-height: 355px; margin-top: 14px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }

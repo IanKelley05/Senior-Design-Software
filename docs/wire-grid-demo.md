@@ -82,11 +82,19 @@ specify both contact types. V1 hits retain their region and have null contact.
 
 Each spatial hit adds one coverage count to each potential row/column crossing
 in its footprint. Bilinear interpolation smooths those counts into one
-continuous canvas heatmap. Color is relative coverage within the **selected
-session**, not force, pressure, or medical risk. The peak wire coverage is shown
+continuous canvas heatmap. In **Coverage** mode, color is relative coverage in
+the selected session. In **Force** mode, each potential crossing uses the maximum
+simulated estimated glove force of hits covering it, then the same interpolation
+is applied. A hit's force is not divided among wires, added across hits, or
+interpreted as a measured pressure distribution. The peak of the chosen metric is shown
 beside the legend. Sum of crossing counts is not the session hit count: a broad
 contact touches more wires but still contributes only one event to totals and
-force statistics. New events briefly outline their footprint.
+force statistics. New events briefly outline their footprint. The full selected
+session supplies a fixed color scale during replay; the frame shows only hits
+revealed so far. Replay takes 30 seconds of playing time, with equal time per hit,
+and supports mode switching, pausing, exact-hit seeking and backward/forward
+steps. See the README for the complete playback behavior. No database writes
+occur during replay.
 
 The main dashboard retains 250 ms polling and separate active/viewed session
 state. The sender always targets the current active session, even while the

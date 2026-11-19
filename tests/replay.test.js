@@ -1,0 +1,46 @@
+const assert = require('node:assert/strict');
+require('../static/replay.js');
+const Replay = globalThis.RhitReplay;
+
+for (const total of [1, 3, 100, 3000]) {
+  const replay = new Replay(total);
+  replay.play(1000);
+  assert.equal(replay.count, 1, 'first hit appears immediately');
+  const interval = 30000 / total;
+  replay.tick(1000 + interval / 2);
+  assert.equal(replay.count, 1);
+  replay.tick(16000);
+  assert.equal(replay.count, Math.min(total, Math.floor(total / 2) + 1));
+  replay.tick(30999);
+  assert.equal(replay.playing, true);
+  replay.tick(31000);
+  assert.equal(replay.count, total);
+  assert.equal(replay.elapsed, 30000);
+  assert.equal(replay.playing, false);
+}
+const replay = new Replay(10);
+replay.play(0);
+replay.pause(4200);
+assert.equal(replay.count, 2);
+replay.tick(900000);
+assert.equal(replay.elapsed, 4200, 'paused time does not advance');
+replay.play(1000000);
+replay.tick(1001800);
+assert.equal(replay.count, 3);
+replay.step(-1);
+assert.equal(replay.count, 2);
+assert.equal(replay.playing, false);
+assert.equal(replay.elapsed, 3000);
+replay.seek(100);
+assert.equal(replay.count, 10);
+replay.seek(-2);
+assert.equal(replay.count, 0);
+replay.overview();
+assert.equal(replay.active, false);
+replay.step(-1);
+assert.equal(replay.count, 9);
+replay.reset(0);
+replay.play(0);
+assert.equal(replay.playing, false);
+assert.equal(replay.count, 0);
+console.log('PASS: empty, single, sparse and dense 30-second replays; pause/resume, step boundaries and session reset.');

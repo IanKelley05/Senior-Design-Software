@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script id="vest-config" type="application/json">{{ grid|tojson }}</script>
   <script defer src="{{ url_for('static', filename='vest.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='replay.js') }}"></script>
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
@@ -33,16 +34,36 @@
   <div class="layout">
     <section class="panel heatmap-panel" aria-labelledby="heatmap-title">
       <div class="section-title"><div><p class="eyebrow">IMPACT DISTRIBUTION</p><h2 id="heatmap-title">Vest heatmap</h2></div><span class="subtle">FRONT · TEMPORARY LAYOUT</span></div>
+      <div class="heat-controls" role="group" aria-label="Heatmap metric">
+        <button id="mode-coverage" type="button" aria-pressed="true">Coverage</button>
+        <button id="mode-force" type="button" aria-pressed="false">Force</button>
+      </div>
+      <p id="heat-description" class="caption">Coverage: how often each area was hit.</p>
+      <section class="replay-panel" aria-labelledby="replay-title">
+        <h3 id="replay-title">Session replay</h3>
+        <p id="replay-hint" class="caption">End the session to replay its hits over 30 seconds.</p>
+        <div class="replay-buttons">
+          <button id="replay-play" type="button" disabled>Play</button>
+          <button id="replay-back" class="secondary" type="button" disabled>Previous hit</button>
+          <button id="replay-next" class="secondary" type="button" disabled>Next hit</button>
+          <button id="replay-restart" class="quiet" type="button" disabled>Restart</button>
+          <button id="replay-overview" class="quiet" type="button" disabled>Full session</button>
+        </div>
+        <label for="replay-position" class="sr-only">Replay hit position</label>
+        <input id="replay-position" type="range" min="0" max="0" value="0" step="1" disabled>
+        <p id="replay-progress" class="caption">Full session view</p>
+        <p id="replay-current" class="caption">Session totals above always describe the complete saved session.</p>
+      </section>
       <div class="continuous-vest"><canvas id="vest" role="img" aria-label="Vest wire contact heatmap"></canvas></div>
-      <div class="legend" aria-label="Contact coverage legend"><span><i class="zero-swatch"></i> No coverage</span><div><div class="legend-gradient"></div><div class="legend-labels"><span>Lower coverage</span><span>Higher coverage</span></div></div></div>
+      <div class="legend" aria-label="Heatmap scale"><span><i class="zero-swatch"></i> <span id="legend-zero">0 hits</span></span><div><div class="legend-gradient"></div><div class="legend-labels"><span id="legend-low">Lower coverage</span><span id="legend-high">0 hits</span></div></div></div>
       <p id="grid-summary" class="caption">No spatial hits recorded.</p>
-      <p class="caption">{{ grid.columns }} columns &times; {{ grid.rows }} rows &middot; Faint copper lines show the wires. Color shows smoothed contact coverage, not force. One footprint counts as one hit.</p>
+      <p class="caption">{{ grid.columns }} columns &times; {{ grid.rows }} rows &middot; Scale uses the full selected session and stays fixed during replay. One footprint counts as one hit.</p>
       <p class="caption">Row/column combinations estimate an area; the exact contact intersections are not yet known.</p>
       <p id="unmapped-regions" class="warning" hidden></p>
     </section>
     <section class="panel history" aria-labelledby="history-title">
       <div class="section-title"><div><p class="eyebrow">SELECTED SESSION</p><h2 id="history-title">Recent hits</h2></div><span id="history-count" class="subtle">0 records</span></div>
-      <p class="caption">Newest first · timestamps in your local timezone</p>
+      <p class="caption">Newest first · timestamps in your local timezone. During replay, the current hit is outlined and upcoming hits are dimmed.</p>
       <div class="table-scroll"><table><thead><tr><th>Timestamp</th><th>Contact wires</th><th>Simulated estimated<br>force (N)</th></tr></thead><tbody id="hit-rows"></tbody></table></div>
       <p id="empty-hits" class="empty">No hits recorded.</p>
     </section>
